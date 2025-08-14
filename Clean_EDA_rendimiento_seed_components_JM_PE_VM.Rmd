@@ -1,0 +1,1091 @@
+---
+title: "Análisis de datos FM2406: Componentes Rendimiento Semillas Invernadero"
+author: "**Valeria Moreno, Paula Espitia, Juan Camilo Mejía**"
+date: "Junio-Julio 2025"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    theme: united
+---
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Diseño experimental
+```{r}
+```
+
+![]("C:/Users/pespitia/Downloads/Screenshot 2025-07-10 095606.png")
+
+```{r, echo=FALSE, fig.width=15, fig.height=13,message=FALSE, warning=FALSE, results='hide'}
+install.packages(c(
+  "readxl",
+  "tidyverse",
+  "ggpubr",
+  "ggrepel",
+  "hrbrthemes",
+  "gt",
+  "ggplot2",
+  "viridis",
+  "RColorBrewer"
+))
+install.packages("agriutilities")
+library(agriutilities)
+library(readxl)
+library(tidyverse)
+library(ggpubr)
+library(ggrepel)
+library(hrbrthemes)
+library(gt)
+library(gtExtras)
+library(ggplot2)
+library(viridis)
+library(RColorBrewer)
+
+setwd("D:/CGIAR/Alliance - Mejoramiento genético de forrajes - General/3_Interspecific/2024/FM2406_yieldcomponentsgreenhouse/1.data")
+datos <- read_excel("Factorial_Layout_FM2406_CM1P.xlsx",sheet = "DATA")
+str(datos)
+full_blues <- brewer.pal(n = 9, name = "YlGnBu")
+blues_palette <- rev(full_blues[3:9]) 
+#Field graph
+field <- datos %>%
+  ggplot(
+    aes(x = COLUMN, y = ROW, fill = as.factor(TRT_COMB), label = TRT_COMB)
+  ) +
+  geom_tile(color = "black") +
+  geom_text(aes(label = TRT_COMB), size = 2.5, color = "black", angle=90) +
+  theme_void() +
+  scale_fill_brewer(palette = "YlGnBu") +
+  labs(fill = "Tratamiento")+theme(legend.position = "bottom", axis.title = element_blank(),legend.text = element_text(size = 8))
+
+field
+
+ggsave(
+  filename = "../4.pictures/field_plot_poster.jpg",
+  plot = field,
+  dpi = 600
+)
+```
+# Variables respuesta evaluadas
+```{r, include=FALSE}
+rm(list = ls())
+library(openxlsx)
+library(dplyr)
+library(tidyr)
+library(writexl)
+library(lme4)
+library(lmerTest)
+library(plotly)
+library(GGally)
+library(ggpubr)
+
+setwd("D:/CGIAR/Alliance - Mejoramiento genético de forrajes - General/3_Interspecific/2024/FM2406_yieldcomponentsgreenhouse")
+
+df <- read.xlsx("./1.data/base de datos 2.0.xlsx")
+
+df <- df %>%
+  mutate(
+    LOCATION = as.factor(LOCATION),
+    PLOT = as.factor(PLOT),
+    REP = as.factor(REP),
+    FACTOR_1 = as.factor(FACTOR_1),  # Genotype
+    FACTOR_2 = as.factor(FACTOR_2),  # Treatment (FULL / ZERO)
+    TRT_COMB = as.factor(TRT_COMB),
+    EVALUATION = as.factor(EVALUATION),
+    DATE = as.Date(DATE, format = "%A, %B %d, %Y"),
+    N_TILLER = as.numeric(N_TILLER),
+    PHYL_day = as.numeric(PHYL_day),
+    PLOT = as.factor(PLOT),
+    ROW = as.factor(ROW),
+    COLUMN = as.factor(COLUMN)
+  )
+
+str(df)
+summary(df)
+colnames(df)
+#View(head(df, 5))
+```
+
+```{r, include=FALSE}
+#Preprocesamiento de datos para boxplots y medidas en el tiempo
+df_long <- df %>%
+  dplyr::select(DATE, FACTOR_1, FACTOR_2,N_INFLORESCENCES,N_TILLER,SPAD,FV_FM,LAR_day,LAR_day,PHYL_day,PHYL_GDD,AUC_TILLERS,AUC_FLOWERS,MEAN_NW_INF,MEDIAN_NW_INF,SUM_NW,MEAN_TW_INF,MEDIAN_TW_INF,SUM_TW,MEAN_N_EMPTYSEED,MEDIAN_N_EMPTYSEED,SUM_N_EMPTYSEED,MEAN_N_FULLSEED,MEDIAN_N_FULLSEED,SUM_N_FULLSEED,SUM_N_TOTALSEED,SEED_SET,WEIGHT_PER_SEEDTW,WEIGHT_PER_SEEDNW,MEDIAN_N_RACIMOS,MEAN_N_RACIMOS,SUM_N_RACIMOS,MEAN_LONG_PANICULA,MEDIAN_LONG_PANICULA,MEAN_LONG_RACIMOS,MEDIAN_LONG_RACIMOS,MEAN_DIST_HBAND,MEDIAN_DIST_HBAND,MEAN_DIST_H1,MEDIAN_DIST_H1,MEAN_NHOJAS,MEDIAN_NHOJAS) %>%
+  pivot_longer(
+    cols = -c(DATE, FACTOR_1, FACTOR_2),
+    names_to = "Variable",
+    values_to = "Value"
+  ) %>%
+  filter(!is.na(Value))
+
+#Para la correlación
+
+df_long2 <- df %>%
+  rename(GENOTYPE = FACTOR_1, FERTILIZER = FACTOR_2) %>% 
+  # select(-c("NEW_LEAF", "NEW_LEAF_ACCUMULATED", "LAR", "LAR_day", "LAR_GDD", "PHYL_GDD")) %>%
+  pivot_longer(
+    cols = c(N_INFLORESCENCES, N_TILLER, SPAD, FV_FM, LAR_day,PHYL_day,PHYL_GDD, AUC_TILLERS, AUC_FLOWERS,MEAN_NW_INF,MEDIAN_NW_INF, MEAN_N_EMPTYSEED,MEDIAN_N_EMPTYSEED,
+SUM_N_EMPTYSEED,MEAN_N_FULLSEED,MEDIAN_N_FULLSEED,SUM_N_FULLSEED,SUM_N_TOTALSEED, SUM_NW, MEAN_TW_INF,MEDIAN_TW_INF, SUM_TW,SEED_SET,WEIGHT_PER_SEEDTW,WEIGHT_PER_SEEDNW,,MEDIAN_N_RACIMOS,MEAN_N_RACIMOS,SUM_N_RACIMOS,MEAN_LONG_PANICULA,MEDIAN_LONG_PANICULA,MEAN_LONG_RACIMOS,MEDIAN_LONG_RACIMOS,MEAN_DIST_HBAND,MEDIAN_DIST_HBAND,MEAN_DIST_H1,MEDIAN_DIST_H1,MEAN_NHOJAS,MEDIAN_NHOJAS),
+    names_to = "Variable",
+    values_to = "Value"
+  ) %>%  filter(!is.na(Value))
+
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, include=FALSE}
+library(DT)
+DT::datatable(
+  head(df, 50),
+  caption = "Set de datos crudos",
+  options = list(pageLength = 5, scrollX = TRUE)
+)
+```
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE,results='hide'}
+rm(list = setdiff(ls(), c("df", "df_long", "df_long2")))
+#dev.off()
+gc()
+
+library(tidyverse)
+library(lme4)
+library(emmeans)
+library(multcompView)
+library(multcomp)
+library(broom.mixed)
+
+
+# Trait classification
+traits_repeated <- c("N_INFLORESCENCES", "N_TILLER", "SPAD", "FV_FM")
+# traits_single <- c("LAR_day", "PHYL_day", "AUC_TILLERS", "AUC_FLOWERS")
+traits_single <- c("PHYL_day","PHYL_GDD")
+#setdiff(unique(df_long2$Variable), traits_repeated)
+# traits_seeds <- c("SUM_NW", "MEAN_NW_INF", "MEDIAN_NW_INF", "SUM_TW", "MEAN_TW_INF", "MEDIAN_TW_INF", "MEAN_N_EMPTYSEED", "MEDIAN_N_EMPTYSEED", "SUM_N_EMPTYSEED", "MEAN_N_FULLSEED", "MEDIAN_N_FULLSEED", "SUM_N_FULLSEED", "SUM_N_TOTALSEED", "SEED_SET","WEIGHT_PER_SEEDTW","WEIGHT_PER_SEEDNW","MEDIAN_N_RACIMOS","MEAN_N_RACIMOS","SUM_N_RACIMOS","MEAN_LONG_PANICULA","MEDIAN_LONG_PANICULA","MEAN_LONG_RACIMOS","MEDIAN_LONG_RACIMOS","MEAN_DIST_HBAND","MEDIAN_DIST_HBAND","MEAN_DIST_H1","MEDIAN_DIST_H1","MEAN_NHOJAS","MEDIAN_NHOJAS")
+traits_seeds <- c("MEAN_NW_INF", "MEAN_TW_INF", "MEAN_N_EMPTYSEED", "MEAN_N_FULLSEED",  "SEED_SET","WEIGHT_PER_SEEDTW","WEIGHT_PER_SEEDNW","MEAN_N_RACIMOS","MEAN_LONG_PANICULA","MEAN_LONG_RACIMOS","MEAN_DIST_HBAND","MEAN_DIST_H1","MEAN_NHOJAS")
+
+#Mirar que variables tienen todos los Genotipos 
+
+a <- df_long2 %>%
+  group_by(Variable, FERTILIZER) %>%
+  summarise(
+    Genotypes = paste(unique(GENOTYPE), collapse = ", "),
+    n_genotypes = n_distinct(GENOTYPE),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    Trait_classification = case_when(
+      Variable %in% traits_repeated ~ "Repeated measure",
+      Variable %in% traits_single ~ "Single measure",
+      Variable %in% traits_seeds ~ "Seed measure",
+      TRUE ~ "Unclassified"
+    )
+  ) %>%
+  arrange(desc(n_genotypes), Variable, FERTILIZER)
+
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+DT::datatable(
+  head(a,42),
+  options = list(pageLength = 26, scrollX = TRUE)
+)
+```
+
+
+# 1. Preprocesamiento
+
+**Cargar la base de datos y cambiar las columnas a factores y a números**
+
+
+
+# 2. Análisis exploratorio de los datos (EDA)
+
+**Lo hacemos para ver la distribución de los datos, ver si hay errores de digitación y otros**
+
+
+Para el EDA
+```{r, echo=FALSE, message=FALSE, warning=FALSE, include=FALSE}
+
+DT::datatable(
+  head(df_long, 5),
+  caption = "Primeras 5 filas del dataset",
+  options = list(pageLength = 5, scrollX = TRUE)
+)
+```
+
+Para la correlación entre variables respuesta
+```{r, echo=FALSE, message=FALSE, warning=FALSE, include=FALSE}
+
+DT::datatable(
+  head(df_long2, 5),
+  caption = "Primeras 5 filas del dataset",
+  options = list(pageLength = 5, scrollX = TRUE)
+)
+```
+
+## 2.1 Gráficas 
+
+Para las variables repetidas en el tiempo (N_INFLORESCENCES, N_TILLER, SPAD, FV_FM) y boxplot para las variables únicas, por tratamiento 
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+library(ggplot2)
+library(dplyr)
+
+dir.create("./3.results/VM-PE_eda_rendimiento_seed_components_JM", recursive = TRUE, showWarnings = FALSE)
+
+#variables en el tiempo
+selected_time_vars <- c("N_INFLORESCENCES", "N_TILLER", "SPAD", "FV_FM")
+```
+
+```{r, echo=FALSE, fig.width=12, fig.height=10, message=FALSE, warning=FALSE, results='hide'}
+
+time_variables <- ggplot(df_long %>% filter(Variable %in% selected_time_vars),
+       aes(x = DATE, y = Value, color = FACTOR_1, linetype = FACTOR_2,
+           group = interaction(FACTOR_1, FACTOR_2))) +
+  geom_point(alpha = 0.2) +
+  geom_smooth(method = "loess", se = FALSE) +
+  facet_wrap(~ Variable, scales = "free_y", ncol = 2) +
+  labs(title="Variables medidas en el tiempo", x = "Date", y = "Value", color = "Genotype", linetype = "Fertilizer") +
+  theme_minimal()
+
+time_variables
+
+ggsave(filename = "./3.results/VM-PE_eda_rendimiento_seed_components_JM/1_timeline_rawdata_repeatedvariables.pdf", plot = time_variables, width = 15, height=10)
+```
+
+```{r, echo=FALSE, fig.width=15, fig.height=13,message=FALSE, warning=FALSE, results='hide'}
+#Boxplot
+
+boxplot<-ggplot(df_long %>% filter(!Variable %in% selected_time_vars), aes(x = FACTOR_1, y = Value, fill = FACTOR_2)) +
+  geom_boxplot(outlier.color = "red", outlier.size = 1, position = position_dodge(0.8)) +
+  facet_wrap(~ Variable, scales = "free_y", ncol = 3) +
+  labs(title= "Boxplot de variables medidas una vez",x = "Genotype", y = "Value", fill = "Treatment") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+boxplot
+
+ggsave(filename = "./3.results/VM-PE_eda_rendimiento_seed_components_JM/1_boxplot_rawdata_nonrepeatedvariables.pdf", plot = boxplot, width = 15, height=10)
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Mantener las variables como factor
+df_long <- df_long %>%
+  mutate(
+    FACTOR_1 = factor(FACTOR_1),
+    FACTOR_2 = factor(FACTOR_2),
+    Variable = factor(Variable)
+  )
+```
+
+## 2.2. Correlaciones 
+
+Entre variables para cada tratamiento de fertilización: medias y por inflorescencia. 
+```{r, echo=FALSE, message=FALSE, warning=FALSE,results='hide'}
+#Datos crudos
+library(tidyverse)
+library(Hmisc)
+library(corrplot)
+library(openxlsx)
+
+# Traits de interés
+repeated <- c("N_INFLORESCENCES", "N_TILLER", "SPAD", "FV_FM")
+# seleccionartraits <- c("N_INFLORESCENCES", "N_TILLER", "SPAD", "FV_FM", "LAR_day", "PHYL_day",
+#                        "AUC_TILLERS", "AUC_FLOWERS", "MEAN_NW_INF", "MEDIAN_NW_INF", "SUM_NW",
+#                        "MEAN_TW_INF", "MEDIAN_TW_INF", "SUM_TW", "MEAN_N_EMPTYSEED", "MEDIAN_N_EMPTYSEED",
+#                        "SUM_N_EMPTYSEED", "MEAN_N_FULLSEED", "MEDIAN_N_FULLSEED", "SUM_N_FULLSEED",
+#                        "SUM_N_TOTALSEED", "SEED_SET", "WEIGHT_PER_SEEDTW", "WEIGHT_PER_SEEDNW",
+#                        "MEDIAN_N_RACIMOS", "MEAN_N_RACIMOS", "SUM_N_RACIMOS", "MEAN_LONG_PANICULA",
+#                        "MEDIAN_LONG_PANICULA", "MEAN_LONG_RACIMOS", "MEDIAN_LONG_RACIMOS",
+#                        "MEAN_DIST_HBAND", "MEDIAN_DIST_HBAND", "MEAN_DIST_H1", "MEDIAN_DIST_H1",
+#                        "MEAN_NHOJAS", "MEDIAN_NHOJAS")
+seleccionartraits <- c("N_INFLORESCENCES", "N_TILLER", "SPAD", "FV_FM", "PHYL_day","PHYL_GDD",
+                        "MEAN_NW_INF",
+                       "MEAN_TW_INF", "MEAN_N_EMPTYSEED","MEAN_N_FULLSEED", 
+                       "SEED_SET", "WEIGHT_PER_SEEDNW",
+                       "MEAN_N_RACIMOS",  "MEAN_LONG_PANICULA",
+                       "MEAN_LONG_RACIMOS", "MEAN_DIST_HBAND",  "MEAN_DIST_H1",
+                       "MEAN_NHOJAS")
+# === 1. Preprocesamiento ===
+
+# Última fecha para traits repetidos
+repeated_df <- df_long2 %>%
+  filter(Variable %in% repeated) %>%
+  group_by(GENOTYPE, FERTILIZER, Variable, PLOT) %>%
+  filter(DATE == max(DATE)) %>%
+  ungroup()
+
+non_repeated_df <- df_long2 %>%
+  filter(!(Variable %in% repeated))
+
+# Juntar y transformar a ancho
+raw_wide <- bind_rows(repeated_df, non_repeated_df) %>%
+  group_by(GENOTYPE, FERTILIZER, Variable, PLOT) %>%
+  summarise(Value = mean(Value), .groups = "drop") %>%
+  pivot_wider(names_from = Variable, values_from = Value) %>%
+  filter(GENOTYPE == "606")
+
+raw_wide_full <- raw_wide %>% filter(FERTILIZER == "FULL")
+raw_wide_zero <- raw_wide %>% filter(FERTILIZER == "ZERO")
+
+# === 2. Función de correlaciones con rcorr ===
+
+make_corr_table <- function(df, traits) {
+  mat <- df %>%
+    dplyr::select(all_of(traits)) %>%
+    dplyr::mutate(across(everything(), as.numeric)) %>%
+    as.matrix()
+  
+  rc <- rcorr(mat)
+  
+  # Convertir a data.frame largo
+  r_df <- as.data.frame(as.table(rc$r)) %>% rename(Correlation = Freq)
+  p_df <- as.data.frame(as.table(rc$P)) %>% rename(Pvalue = Freq)
+  n_df <- as.data.frame(as.table(rc$n)) %>% rename(N = Freq)
+
+  # Expandir todas las combinaciones posibles
+  all_pairs <- expand.grid(TRAIT1 = traits, TRAIT2 = traits, stringsAsFactors = FALSE)
+
+  # Unir todo asegurando que se incluyan todas las combinaciones
+  corr_table <- all_pairs %>%
+    left_join(r_df, by = c("TRAIT1" = "Var1", "TRAIT2" = "Var2")) %>%
+    left_join(p_df, by = c("TRAIT1" = "Var1", "TRAIT2" = "Var2")) %>%
+    left_join(n_df, by = c("TRAIT1" = "Var1", "TRAIT2" = "Var2")) %>%
+    filter(TRAIT1 != TRAIT2) %>%
+    mutate(
+      Pair = paste(pmin(TRAIT1, TRAIT2), pmax(TRAIT1, TRAIT2), sep = "_"),
+      Signif = case_when(
+        is.na(Pvalue) ~ "",
+        Pvalue <= 0.001 ~ "***",
+        Pvalue <= 0.01 ~ "**",
+        Pvalue <= 0.05 ~ "*",
+        Pvalue <= 0.1 ~ ".",
+        TRUE ~ ""
+      )
+    ) %>%
+    distinct(Pair, .keep_all = TRUE) %>%
+    dplyr::select(-Pair)
+  
+  return(list(corr_matrix = rc$r, corr_table = corr_table))
+}
+
+
+# === 3. Calcular correlaciones y guardar matrices ===
+
+cor_combined <- make_corr_table(raw_wide, seleccionartraits)
+cor_full     <- make_corr_table(raw_wide_full, seleccionartraits)
+cor_zero     <- make_corr_table(raw_wide_zero, seleccionartraits)
+
+# === 4. Guardar tablas largas en Excel ===
+
+write.xlsx(
+  list(
+    "combined" = cor_combined$corr_table,
+    "full"     = cor_full$corr_table,
+    "zero"     = cor_zero$corr_table
+  ),
+  file = "./3.results/VM-PE_eda_rendimiento_seed_components_JM/correlation_tables_long_format.xlsx",
+  overwrite = TRUE
+)
+
+# === 5. Corrplots con coeficientes ===
+
+# Combined
+pdf("./3.results/VM-PE_eda_rendimiento_seed_components_JM/2_rawcorrelation_combined.pdf", width = 18, height = 15)
+corrplot(cor_combined$corr_matrix[seleccionartraits, seleccionartraits],
+         method = "color", col = COL1('Purples'),
+         type = "upper", tl.col = "black", tl.srt = 45, 
+         tl.cex = 0.8, addCoef.col = "black", number.cex = 0.7,
+         mar = c(0, 0, 2, 0), title = "CIAT:606 Combined")
+dev.off()
+
+# FULL
+pdf("./3.results/VM-PE_eda_rendimiento_seed_components_JM/2_rawcorrelation_full.pdf", width = 18, height = 15)
+corrplot(cor_full$corr_matrix[seleccionartraits, seleccionartraits],
+         method = "color", col = COL1('Blues'),
+         type = "upper", tl.col = "black", tl.srt = 45, 
+         tl.cex = 0.8, addCoef.col = "grey15", number.cex = 0.7,
+         mar = c(0, 0, 2, 0), title = "CIAT:606 FULL")
+dev.off()
+
+# ZERO
+pdf("./3.results/VM-PE_eda_rendimiento_seed_components_JM/2_rawcorrelation_zero.pdf", width = 18, height = 15)
+corrplot(cor_zero$corr_matrix[seleccionartraits, seleccionartraits],
+         method = "color", col = COL1('YlOrRd'),
+         type = "upper", tl.col = "black", tl.srt = 45, 
+         tl.cex = 0.8, addCoef.col = "black", number.cex = 0.7,
+         mar = c(0, 0, 2, 0), title = "CIAT:606 ZERO")
+dev.off()
+
+# === 6. Comparar correlaciones FULL vs ZERO ===
+
+# Unir tablas por pares de variables
+cor_comparison <- full_join(
+  cor_full$corr_table %>% rename(r_full = Correlation, p_full = Pvalue),
+  cor_zero$corr_table %>% rename(r_zero = Correlation, p_zero = Pvalue),
+  by = c("TRAIT1", "TRAIT2")
+) %>%
+  mutate(
+    diff_r = r_full - r_zero,
+    abs_diff_r = abs(diff_r)
+  ) %>%
+  arrange(desc(diff_r))  # Ordenar por magnitud de diferencia
+
+# Ver top diferencias
+head(cor_comparison, 20)
+
+# Guardar a Excel (opcional)
+write.xlsx(
+  cor_comparison,
+  file = "./3.results/VM-PE_eda_rendimiento_seed_components_JM/correlation_differences_FULL_vs_ZERO.xlsx",
+  overwrite = TRUE
+)
+
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+# Filtrar solo columnas relevantes
+cor_comparison_subset <- cor_comparison %>%
+  dplyr::select(TRAIT1, TRAIT2, r_full, r_zero, diff_r)
+
+# Mostrar tabla interactiva
+DT::datatable(
+  head(cor_comparison_subset, 42),
+  options = list(pageLength = 26, scrollX = TRUE)
+)
+```
+
+```{r, echo=FALSE,fig.width=18, fig.height=15,message=FALSE, warning=FALSE, results='hide'}
+corrplot(cor_combined$corr_matrix, method = "color", col = COL1('Purples'), type = "upper",
+         tl.col = "black", tl.srt = 45, tl.cex = 0.9, addCoef.col = "black",
+         number.cex = 0.8, mar = c(0, 0, 2, 0), title = "CIAT:606 Combined - Trait Correlation")
+```
+
+```{r, echo=FALSE,fig.width=18, fig.height=15,message=FALSE, warning=FALSE, results='hide'}
+corrplot(cor_full$corr_matrix, method = "color", col = COL1('YlGn'), type = "upper",
+         tl.col = "black", tl.srt = 45, tl.cex = 0.9, addCoef.col = "grey15",
+         number.cex = 0.8, mar = c(0, 0, 2, 0), title = "CIAT:606 FULL - Trait Correlation")
+```
+
+```{r, echo=FALSE,fig.width=18, fig.height=15,message=FALSE, warning=FALSE, results='hide'}
+corrplot(cor_zero$corr_matrix, method = "color", col = COL1('Oranges'), type = "upper",
+         tl.col = "black", tl.srt = 45, tl.cex = 0.9, addCoef.col = "black",
+         number.cex = 0.8, mar = c(0, 0, 2, 0), title = "CIAT:606 ZERO - Trait Correlation")
+```
+
+# 3. Modelos lineales mixtos
+
+**Se usan modelos lineales mixtos para ver los BLUEs por tratamiento. Se realizó un análisis con tres modelos dependiendo de la clasificación de las variables en: Repeated measure, Single measure, Seed measure**
+
+**Para las variables de semilla (Seed measure) se evaluó el efecto de la fertilización en el genotipo CIAT 606, ya que fue el único que floreció.**
+
+## 3.1. Variables con información de todos los genotipos
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE,results='hide'}
+
+# Output containers
+blue_stage1 <- list()
+blup_stage1 <- list()
+
+all_genotypes <- a %>%
+  filter(Trait_classification %in% c("Repeated measure", "Single measure")) %>%
+  dplyr::select(Variable, FERTILIZER,Trait_classification)
+
+for (trait in unique(all_genotypes$Variable)) {
+  df_trait <- df_long2 %>% filter(Variable == trait)
+  
+  for (trt in unique(df_trait$FERTILIZER)) {
+    df_sub <- df_trait %>% filter(FERTILIZER == trt)
+    
+    # Ajustar modelo para BLUEs
+    model_blue <- tryCatch({
+      if (trait %in% traits_repeated) {
+        lmer(Value ~ GENOTYPE + (1 | REP) + (1 | EVALUATION), data = df_sub)
+      } else {
+        lmer(Value ~ GENOTYPE + (1 | REP), data = df_sub)
+      }
+    }, error = function(e) {
+      message(paste("Error BLUE:", trait, trt, "->", e$message))
+      return(NULL)
+    })
+    
+    if (!is.null(model_blue)) {
+      emms_blue <- emmeans(model_blue, ~ GENOTYPE)
+      emms_df <- as.data.frame(emms_blue) %>%
+        rename(BLUE = emmean, SE = SE, LOWER = lower.CL, UPPER = upper.CL) %>%
+        mutate(Trait = trait, FERTILIZER = trt)
+      
+      blue_stage1[[paste(trait, trt)]] <- emms_df
+    }
+
+    # Ajustar modelo para BLUPs
+    model_blup <- tryCatch({
+      if (trait %in% traits_repeated) {
+        lmer(Value ~ (1 | GENOTYPE) + (1 | REP) + (1 | ROW) + (1 | COLUMN) + (1 | EVALUATION), data = df_sub)
+      } else {
+        lmer(Value ~ (1 | GENOTYPE) + (1 | REP) + (1 | ROW) + (1 | COLUMN), data = df_sub)
+      }
+    }, error = function(e) {
+      message(paste("Error BLUP:", trait, trt, "->", e$message))
+      return(NULL)
+    })
+    
+    if (!is.null(model_blup)) {
+      intercept <- fixef(model_blup)[["(Intercept)"]]
+      ran <- ranef(model_blup)$GENOTYPE %>%
+        tibble::rownames_to_column("GENOTYPE") %>%
+        rename(BLUP_deviation = `(Intercept)`) %>%
+        mutate(
+          BLUP = intercept + BLUP_deviation,
+          Trait = trait,
+          FERTILIZER = trt
+        )
+      
+      blup_stage1[[paste(trait, trt)]] <- ran
+    }
+  }
+}
+
+# Guardar resultados
+
+blue_stage1_df <- bind_rows(blue_stage1)
+blup_stage1_df <- bind_rows(blup_stage1)
+
+blue_stage1_wide <- blue_stage1_df %>%
+  pivot_wider(
+    id_cols = c(GENOTYPE, Trait),
+    names_from = FERTILIZER,
+    values_from = c(BLUE, SE),
+    names_sep = "_"
+  ) %>%
+  dplyr::select(GENOTYPE, Trait, BLUE_FULL, SE_FULL, BLUE_ZERO, SE_ZERO)
+
+write.csv(blue_stage1_wide, "./3.results/VM-PE_eda_rendimiento_seed_components_JM/3_blues_per_treatment_adjusted.csv", row.names = FALSE)
+
+blup_stage1_wide <- blup_stage1_df %>%
+  pivot_wider(
+    id_cols = c(GENOTYPE, Trait),
+    names_from = FERTILIZER,
+    values_from = c(BLUP, BLUP_deviation),
+    names_sep = "_"
+  ) %>%
+  dplyr::select(GENOTYPE, Trait, BLUP_FULL, BLUP_deviation_FULL, BLUP_ZERO, BLUP_deviation_ZERO)
+
+write.csv(blue_stage1_wide, "./3.results/VM-PE_eda_rendimiento_seed_components_JM/3_blups_per_treatment_adjusted.csv", row.names = FALSE)
+
+#Ver Heredabilidad de estos traits (pendiente!!!!!)
+
+heritability <- sapply(unique(all_genotypes$Variable), function(trait) {
+  df_trait <- df_long2 %>% filter(Variable == trait)
+  
+  # Modelo mixto completo como en Stage 1
+  model <- tryCatch({
+    if (trait %in% traits_repeated) {
+      lmer(Value ~ (1 | GENOTYPE) + (1 | REP) + (1 | ROW) + (1 | COLUMN) + (1 | EVALUATION), data = df_trait)
+    } else {
+      lmer(Value ~ (1 | GENOTYPE) + (1 | REP) + (1 | ROW) + (1 | COLUMN), data = df_trait)
+    }
+  }, error = function(e) return(NULL))
+  
+  if (!is.null(model)) {
+    vc <- VarCorr(model)
+    var_geno <- attr(vc$GENOTYPE, "stddev")^2
+    var_resid <- attr(vc, "sc")^2
+    
+    # Otras varianzas (si existen)
+    var_other <- sum(sapply(vc, function(x) if (!is.null(x)) attr(x, "stddev")^2 else 0)) - var_geno
+    
+    # H² en sentido amplio (var_geno sobre toda la varianza)
+    H2 <- var_geno / (var_geno + var_other + var_resid)
+    return(H2)
+  } else {
+    return(NA)
+  }
+})
+
+heritability_df <- tibble(Trait = names(heritability), H2 = heritability)
+
+
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+blue_stage1_wide_display <- blue_stage1_wide %>%
+  mutate(across(where(is.numeric), ~ signif(.x, 3)))
+
+DT::datatable(
+  blue_stage1_wide_display,
+  caption = "BLUEs variables con todos los genotipos",
+  options = list(pageLength = 10, scrollX = TRUE)
+)
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+blup_stage1_wide_display <- blup_stage1_wide %>%
+  mutate(across(where(is.numeric), ~ signif(.x, 3)))
+
+DT::datatable(
+  blup_stage1_wide_display,
+  caption = "BLUPs variables con todos los genotipos",
+  options = list(pageLength = 10, scrollX = TRUE)
+)
+```
+
+```{r, echo=FALSE, fig.width=12, fig.height=10,message=FALSE, warning=FALSE, results='hide'}
+library(ggplot2)
+graphsblues<-
+bars_veg<-ggplot(blue_stage1_df, aes(x = GENOTYPE, y = BLUE, fill = FERTILIZER)) +
+  geom_col(position = position_dodge(width = 0.9), width = 0.7) +
+  geom_errorbar(
+    aes(ymin = BLUE - SE, ymax = BLUE + SE),
+    position = position_dodge(width = 0.9), width = 0.25
+  ) +
+  facet_wrap(~ Trait, scales = "free_y") +
+  labs(
+    title = "BLUEs por genotipo y tratamiento",
+    y = "BLUE and SE",
+    x = "Genotipo"
+  ) +
+  scale_fill_manual(
+    values = c("FULL" = "#005AB5", "ZERO" = "#FFC20A"),
+    name = "Fertilizante"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "top"
+  )
+bars_veg
+ggsave(filename = "./3.results/VM-PE_eda_rendimiento_seed_components_JM/4_blues_bars_vegvars.pdf", plot = bars_veg, width = 15, height=10)
+
+## LOLLIPOP PLOT
+
+library(ggplot2)
+
+lollipop_veg<-ggplot(blue_stage1_df, aes(x = GENOTYPE, y = BLUE, color = FERTILIZER)) +
+  geom_point(size = 3) +
+  geom_segment(aes(xend = GENOTYPE, yend = 0), linetype = "dotted") +
+  facet_wrap(~ Trait, scales = "free_y") +
+  scale_color_manual(values = c("FULL" = "#005AB5", "ZERO" = "#FFC20A")) +
+  labs(title = "BLUEs por tratamiento y genotipo",
+       y = "BLUE", x = "Genotipo", color = "Fertilizante") +
+  theme_minimal(base_size = 14) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+#lollipop_veg
+ggsave(filename = "./3.results/VM-PE_eda_rendimiento_seed_components_JM/4_blues_lollipop_vegvars.pdf", plot = lollipop_veg, width = 15, height=10)
+
+##DOTPLOT HORIZONTAL
+
+dotplot_veg<-ggplot(blue_stage1_df, aes(x = BLUE, y = GENOTYPE, color = FERTILIZER)) +
+  geom_point(size = 3) +
+  facet_wrap(~ Trait, scales = "free_x") +
+  scale_color_manual(values = c("FULL" = "#005AB5", "ZERO" = "#FFC20A")) +
+  labs(title = "BLUEs por genotipo y tratamiento",
+       x = "BLUE", y = "Genotipo") +
+  theme_bw(base_size = 14)
+#dotplot_veg
+ggsave(filename = "./3.results/VM-PE_eda_rendimiento_seed_components_JM/4_blues_dotplot_vegvars.pdf", plot = dotplot_veg, width = 15, height=10)
+
+##SPIDERPLOT
+
+library(fmsb)
+library(dplyr)
+library(tidyr)
+library(RColorBrewer)
+
+# 1. Reorganizar datos
+radar_df <- blue_stage1_wide %>%
+  pivot_longer(cols = c(BLUE_FULL, BLUE_ZERO), 
+               names_to = "Treatment", 
+               values_to = "BLUE") %>%
+  mutate(Treatment = ifelse(Treatment == "BLUE_FULL", "FULL", "ZERO")) %>%
+  unite("Group", GENOTYPE, Treatment, sep = "_") %>%
+  distinct(Group, Trait, BLUE) %>%
+  pivot_wider(names_from = Trait, values_from = BLUE) %>%
+  column_to_rownames("Group")
+
+# 2. Normalizar (0–100)
+radar_scaled <- as.data.frame(scale(radar_df, center = FALSE,
+                                    scale = apply(radar_df, 2, max, na.rm = TRUE)) * 100)
+
+# 3. Formato requerido por fmsb
+radar_fmsb <- rbind(rep(100, ncol(radar_scaled)),  # max
+                    rep(0, ncol(radar_scaled)),    # min
+                    radar_scaled)
+rownames(radar_fmsb)[3:nrow(radar_fmsb)] <- rownames(radar_scaled)
+
+# 4. Asignar colores a genotipos (usando RColorBrewer)
+genotypes <- unique(gsub("_(FULL|ZERO)", "", rownames(radar_scaled)))
+n_genos <- length(genotypes)
+geno_colors <- setNames(brewer.pal(n_genos, "Dark2"), genotypes)
+
+# 5. Armar vectores de color y tipo de línea
+colors_border <- sapply(rownames(radar_scaled), function(x) {
+  geno <- strsplit(x, "_")[[1]][1]
+  geno_colors[geno]
+})
+
+linetypes <- sapply(rownames(radar_scaled), function(x) {
+  if (grepl("FULL", x)) 1 else 2  # FULL: solid, ZERO: dashed
+})
+
+# 6. Plot
+pdf("./3.results/VM-PE_eda_rendimiento_seed_components_JM/4_blues_radarplot_vegvars.pdf", width = 15, height = 10)
+radarchart(
+  radar_fmsb,
+  axistype = 1,
+  pcol = colors_border,
+  pfcol = NA,
+  plwd = 2,
+  plty = linetypes,
+  cglcol = "grey70",
+  cglty = 1,
+  cglwd = 0.8,
+  axislabcol = "black",
+  vlcex = 0.8,
+  title = "BLUEs normalizados por genotipo y tratamiento"
+)
+
+# 7. Leyenda
+legend("topright",
+       legend = rownames(radar_scaled),
+       col = colors_border,
+       lty = linetypes,
+       lwd = 2,
+       bty = "n", cex = 0.7)
+dev.off()
+```
+
+```{r, include=FALSE, echo=FALSE, fig.width=12, fig.height=10,message=FALSE, warning=FALSE, results='hide'}
+radarchart(
+  radar_fmsb,
+  axistype = 1,
+  pcol = colors_border,
+  pfcol = NA,
+  plwd = 2,
+  plty = linetypes,
+  cglcol = "grey70",
+  cglty = 1,
+  cglwd = 0.8,
+  axislabcol = "black",
+  vlcex = 0.8,
+  title = "BLUEs normalizados por genotipo y tratamiento"
+)
+
+# 7. Leyenda
+legend("topright",
+       legend = rownames(radar_scaled),
+       col = colors_border,
+       lty = linetypes,
+       lwd = 2,
+       bty = "n", cex = 0.7)
+```
+
+## 3.2. Variables de semilla (CIAT 606)
+
+**Aquí se tuvo en cuenta únicamente el factor Fertilizante dentro del genotipo CIAT 606 y se extrajeron únicamente BLUEs de estas las variables** : CALCULAR RATIO MACOLLOS Y MACOLLOS REPRODUCTIVOS
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE,results='hide'}
+library(tidyverse)
+library(lme4)
+library(emmeans)
+library(multcompView)
+library(multcomp)
+library(broom.mixed)
+
+seed_genotypes <- a %>% filter(Trait_classification %in% c("Seed measure")) %>%
+  dplyr::select(Variable, FERTILIZER, Trait_classification)
+#(MEAN_N_FULLSEED, MEAN_N_EMPTYSEED, MEDIAN_N_EMPTYSEED, MEDIAN_N_FULLSEED, SEED_SET, SUM_N_EMPTYSEED, SUM_N_FULLSEED, SUM_N_TOTALSEED)
+
+blue_stage2 <- list()
+
+for (trait in unique(seed_genotypes$Variable)) {
+  df_sub <- df_long2 %>%
+    filter(Variable == trait, GENOTYPE == "606")
+  
+  if (nrow(df_sub) >= 3 & length(unique(df_sub$FERTILIZER)) == 2) {
+    
+    # BLUE con estructura espacial
+    model_blue <- tryCatch({
+      lmer(Value ~ FERTILIZER + (1|REP) + (1|ROW) + (1|COLUMN), data = df_sub)
+    }, error = function(e) NULL)
+    
+    if (!is.null(model_blue)) {
+      emms_blue <- emmeans(model_blue, ~ FERTILIZER)
+      blue_df <- as.data.frame(emms_blue) %>%
+        rename(BLUE = emmean) %>%
+        mutate(GENOTYPE = "606", Trait = trait)
+      blue_stage2[[trait]] <- blue_df
+    }
+  }
+}
+
+blue_stage2_df <- bind_rows(blue_stage2)
+
+blue_stage2_wide <- blue_stage2_df %>%
+  pivot_wider(
+    id_cols = c(GENOTYPE, Trait),
+    names_from = FERTILIZER,
+    values_from = c(BLUE, SE),
+    names_sep = "_"
+  ) %>%
+  dplyr::select(GENOTYPE, Trait, BLUE_FULL, SE_FULL, BLUE_ZERO, SE_ZERO)
+
+write.csv(blue_stage2_wide, "./3.results/VM-PE_eda_rendimiento_seed_components_JM/3_blues_seedtraits_only606_adjusted.csv", row.names = FALSE)
+
+```
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE,results='hide'}
+
+blue_stage2_wide_display <- blue_stage2_wide %>%
+  mutate(across(where(is.numeric), ~ signif(.x, 3)))
+
+DT::datatable(
+  blue_stage2_wide_display,
+  caption = "BLUEs variables de semilla en CIAT 606",
+  options = list(pageLength = 10, scrollX = TRUE)
+)
+```
+**Aquí se calculó media ($\bar{X}$) y mediana ($\tilde{X}$). Así que para escoger cuál valor representa mejor la muestra, se hicieron gráficos separando ambos parámetros**
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE,results='hide'}
+library(dplyr)
+library(stringr)
+
+blue_stage2_df_mean <- blue_stage2_df %>%
+  filter(!str_starts(Trait, "MEDIAN"))
+
+blue_stage2_df_median <- blue_stage2_df %>%
+  filter(!str_starts(Trait, "MEAN"))
+
+blue_stage2_wide_mean <- blue_stage2_wide %>%
+  filter(!str_starts(Trait, "MEDIAN"))
+blue_stage2_wide_median <- blue_stage2_wide %>%
+  filter(!str_starts(Trait, "MEAN"))
+```
+
+**PLOTS WITH MEAN AND MEDIAN**
+
+```{r, echo=FALSE, fig.width=12, fig.height=10,message=FALSE, warning=FALSE, results='hide'}
+
+library(ggplot2)
+
+bars_mean_seed<-ggplot(blue_stage2_df_mean, aes(x = GENOTYPE, y = BLUE, fill = FERTILIZER)) +
+  geom_col(position = position_dodge(width = 0.9), width = 0.7) +
+  geom_errorbar(
+    aes(ymin = BLUE - SE, ymax = BLUE + SE),
+    position = position_dodge(width = 0.9), width = 0.25
+  ) +
+  facet_wrap(~ Trait, scales = "free_y") +
+  labs(
+    title = "BLUEs por tratamiento",
+    y = "BLUE and SE",
+    x = "Genotipo"
+  ) +
+  scale_fill_manual(
+    values = c("FULL" = "#005AB5", "ZERO" = "#FFC20A"),
+    name = "Fertilizante"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "top"
+  )
+
+ggsave(filename = "./3.results/VM-PE_eda_rendimiento_seed_components_JM/4_blues_bars_seedvars_mean.pdf", plot = bars_mean_seed, width = 15, height=10)
+
+bars_median_seed<-ggplot(blue_stage2_df_median, aes(x = GENOTYPE, y = BLUE, fill = FERTILIZER)) +
+  geom_col(position = position_dodge(width = 0.9), width = 0.7) +
+  geom_errorbar(
+    aes(ymin = BLUE - SE, ymax = BLUE + SE),
+    position = position_dodge(width = 0.9), width = 0.25
+  ) +
+  facet_wrap(~ Trait, scales = "free_y") +
+  labs(
+    title = "BLUEs por tratamiento",
+    y = "BLUE and SE",
+    x = "Genotipo"
+  ) +
+  scale_fill_manual(
+    values = c("FULL" = "#005AB5", "ZERO" = "#FFC20A"),
+    name = "Fertilizante"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "top"
+  )
+
+ggsave(filename = "./3.results/VM-PE_eda_rendimiento_seed_components_JM/4_blues_bars_seedvars_median.pdf", plot = bars_median_seed, width = 15, height=10)
+
+##LOLLIPOP
+
+lollipop_mean_seed<-ggplot(blue_stage2_df_mean, aes(x = GENOTYPE, y = BLUE, color = FERTILIZER)) +
+  geom_point(size = 3) +
+  geom_segment(aes(xend = GENOTYPE, yend = 0), linetype = "dotted") +
+  facet_wrap(~ Trait, scales = "free_y") +
+  scale_color_manual(values = c("FULL" = "#005AB5", "ZERO" = "#FFC20A")) +
+  labs(title = "BLUEs por tratamiento ",
+       y = "BLUE", x = "Genotipo", color = "Fertilizante") +
+  theme_minimal(base_size = 14) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+ggsave(filename = "./3.results/VM-PE_eda_rendimiento_seed_components_JM/4_blues_lollipop_seedvars_mean.pdf", plot = lollipop_mean_seed, width = 15, height=10)
+
+lollipop_median_seed<-ggplot(blue_stage2_df_median, aes(x = GENOTYPE, y = BLUE, color = FERTILIZER)) +
+  geom_point(size = 3) +
+  geom_segment(aes(xend = GENOTYPE, yend = 0), linetype = "dotted") +
+  facet_wrap(~ Trait, scales = "free_y") +
+  scale_color_manual(values = c("FULL" = "#005AB5", "ZERO" = "#FFC20A")) +
+  labs(title = "BLUEs por tratamiento ",
+       y = "BLUE", x = "Genotipo", color = "Fertilizante") +
+  theme_minimal(base_size = 14) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+ggsave(filename = "./3.results/VM-PE_eda_rendimiento_seed_components_JM/4_blues_lollipop_seedvars_median.pdf", plot = lollipop_median_seed, width = 15, height=10)
+
+##DOTPLOT
+
+dotplot_mean_seed<-ggplot(blue_stage2_df_mean, aes(x = BLUE, y = GENOTYPE, color = FERTILIZER)) +
+  geom_point(size = 3) +
+  facet_wrap(~ Trait, scales = "free_x") +
+  scale_color_manual(values = c("FULL" = "#005AB5", "ZERO" = "#FFC20A")) +
+  labs(title = "BLUEs por tratamiento",
+       x = "BLUE", y = "Genotipo", color = "Fertilizante") +
+  theme_bw(base_size = 14)
+
+ggsave(filename = "./3.results/VM-PE_eda_rendimiento_seed_components_JM/4_blues_dotplot_seedvars_mean.pdf", plot = dotplot_mean_seed, width = 15, height=10)
+
+dotplot_median_seed<-ggplot(blue_stage2_df_median, aes(x = BLUE, y = GENOTYPE, color = FERTILIZER)) +
+  geom_point(size = 3) +
+  facet_wrap(~ Trait, scales = "free_x") +
+  scale_color_manual(values = c("FULL" = "#005AB5", "ZERO" = "#FFC20A")) +
+  labs(title = "BLUEs por tratamiento",
+       x = "BLUE", y = "Genotipo", color = "Fertilizante") +
+  theme_bw(base_size = 14)
+
+ggsave(filename = "./3.results/VM-PE_eda_rendimiento_seed_components_JM/4_blues_dotplot_seedvars_median.pdf", plot = dotplot_median_seed, width = 15, height=10)
+
+##SPIDERPLOT
+library(fmsb)
+library(dplyr)
+library(tidyr)
+library(tibble)
+
+# 1. Reorganizar datos
+radar_df <- blue_stage2_wide_median %>%
+  pivot_longer(cols = c(BLUE_FULL, BLUE_ZERO), 
+               names_to = "Treatment", 
+               values_to = "BLUE") %>%
+  mutate(Treatment = ifelse(Treatment == "BLUE_FULL", "FULL", "ZERO")) %>%
+  unite("Group", GENOTYPE, Treatment, sep = "_") %>%
+  distinct(Group, Trait, BLUE) %>%
+  pivot_wider(names_from = Trait, values_from = BLUE) %>%
+  column_to_rownames("Group")
+
+# 2. Normalizar (0–100)
+radar_scaled <- as.data.frame(scale(radar_df, center = FALSE,
+                                    scale = apply(radar_df, 2, max, na.rm = TRUE)) * 100)
+
+# 3. Formato requerido por fmsb
+radar_fmsb <- rbind(rep(100, ncol(radar_scaled)),  # max
+                    rep(0, ncol(radar_scaled)),    # min
+                    radar_scaled)
+rownames(radar_fmsb)[3:nrow(radar_fmsb)] <- rownames(radar_scaled)
+
+# 4. Colores por tratamiento
+colors_border <- sapply(rownames(radar_scaled), function(x) {
+  if (grepl("FULL", x)) "#005AB5" else "#FFC20A"
+})
+colors_fill <- sapply(rownames(radar_scaled), function(x) {
+  if (grepl("FULL", x)) "#005AB580" else "#FFC20A80"  # colores semitransparentes para relleno
+})
+linetypes <- rep(1, length(rownames(radar_scaled)))  # líneas continuas para todos
+
+# 5. Plot
+
+pdf("./3.results/VM-PE_eda_rendimiento_seed_components_JM/4_blues_radarplot_seedvars_median.pdf", width = 15, height = 10)
+
+radarchart(
+  radar_fmsb,
+  axistype = 1,
+  pcol = colors_border,
+  pfcol = colors_fill,
+  plwd = 2,
+  plty = linetypes,
+  cglcol = "grey70",
+  cglty = 1,
+  cglwd = 0.8,
+  axislabcol = "black",
+  vlcex = 0.8,
+  #axislab = c("0", "25", "50", "75", "100"),
+  title = "BLUEs normalizados por tratamiento"
+)
+
+
+# 6. Leyenda
+legend("topright",
+       legend = rownames(radar_scaled),
+       col = colors_border,
+       lwd = 2,
+       lty = linetypes,
+       pt.bg = colors_fill,
+       bty = "n", cex = 0.7)
+
+dev.off()
+```
+
+```{r, echo=FALSE, fig.width=15, fig.height=10,message=FALSE, warning=FALSE, results='hide'}
+bars_mean_seed
+bars_median_seed
+# lollipop_mean_seed
+# lollipop_median_seed
+# dotplot_mean_seed
+# dotplot_median_seed
+
+radarchart(
+  radar_fmsb,
+  axistype = 1,
+  pcol = colors_border,
+  pfcol = colors_fill,
+  plwd = 2,
+  plty = linetypes,
+  cglcol = "grey70",
+  cglty = 1,
+  cglwd = 0.8,
+  axislabcol = "black",
+  vlcex = 0.8,
+  #axislab = c("0", "25", "50", "75", "100"),
+  title = "BLUEs normalizados por tratamiento"
+)
+
+
+# 6. Leyenda
+legend("topright",
+       legend = rownames(radar_scaled),
+       col = colors_border,
+       lwd = 2,
+       lty = linetypes,
+       pt.bg = colors_fill,
+       bty = "n", cex = 0.7)
+
+```
+
